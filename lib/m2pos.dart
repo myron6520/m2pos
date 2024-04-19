@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
+
 import 'm2pos_platform_interface.dart';
 
 class M2pos {
@@ -15,5 +17,14 @@ class M2pos {
       pid,
       vid,
     );
+  }
+
+  Future<List?> readUsbPrinterList() {
+    return M2posPlatform.instance.readUsbPrinterList();
+  }
+
+  void setMethodCallHandler(
+      Future<dynamic> Function(MethodCall call)? handler) {
+    M2posPlatform.instance.setMethodCallHandler(handler);
   }
 }

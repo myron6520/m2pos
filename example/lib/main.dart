@@ -3,6 +3,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:m2pos/m2pos.dart';
+import 'package:m2pos/m2pos_method_channel.dart';
+import 'package:m2pos/m2pos_platform_interface.dart';
 
 void main() {
   runApp(const MyApp());
@@ -22,6 +24,9 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+    _m2posPlugin.setMethodCallHandler((call) async {
+      debugPrint("CALL:${call.method}");
+    });
     initPlatformState();
   }
 
@@ -57,8 +62,9 @@ class _MyAppState extends State<MyApp> {
         body: Center(
           child: GestureDetector(
             child: Text('Running on: $_platformVersion\n'),
-            onTap: () {
-              _m2posPlugin.writeData();
+            onTap: () async {
+              var res = await _m2posPlugin.readUsbPrinterList();
+              debugPrint("res:$res");
             },
           ),
         ),

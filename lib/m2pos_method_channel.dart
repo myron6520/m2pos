@@ -6,7 +6,6 @@ import 'm2pos_platform_interface.dart';
 /// An implementation of [M2posPlatform] that uses method channels.
 class MethodChannelM2pos extends M2posPlatform {
   /// The method channel used to interact with the native platform.
-  @visibleForTesting
   final methodChannel = const MethodChannel('m2pos');
 
   @override
@@ -21,5 +20,16 @@ class MethodChannelM2pos extends M2posPlatform {
     await methodChannel.invokeMethod<String>(
         'writeData', {'data': data, 'pid': pid, 'vid': vid});
     return "Success";
+  }
+
+  @override
+  Future<List?> readUsbPrinterList() async {
+    return await methodChannel.invokeMethod<List?>('readUsbPrinterList');
+  }
+
+  @override
+  void setMethodCallHandler(
+      Future<dynamic> Function(MethodCall call)? handler) {
+    methodChannel.setMethodCallHandler(handler);
   }
 }

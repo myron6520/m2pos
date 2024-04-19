@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'm2pos_method_channel.dart';
@@ -31,5 +32,14 @@ abstract class M2posPlatform extends PlatformInterface {
 
   Future<String?> writeData(Uint8List data, int pid, int vid) {
     throw UnimplementedError('platformVersion() has not been implemented.');
+  }
+
+  Future<List?> readUsbPrinterList() {
+    throw UnimplementedError('platformVersion() has not been implemented.');
+  }
+
+  void setMethodCallHandler(
+      Future<dynamic> Function(MethodCall call)? handler) {
+    throw UnimplementedError('setMethodCallHandler has not been implemented.');
   }
 }

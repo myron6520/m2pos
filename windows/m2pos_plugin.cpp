@@ -17,30 +17,69 @@
 #include <map>
 #include <vector>
 
+#include <Dbt.h>
 // Link with Setupapi.lib
 #pragma comment(lib, "Setupapi.lib")
 
 namespace m2pos
 {
-
+static std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> g_methodChannel;
+LRESULT CALLBACK USBDeviceNotificationCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_DEVICECHANGE:
+            if (wParam == DBT_DEVICEARRIVAL) {
+                std::cout << "USB device inserted" << std::endl;
+                if (g_methodChannel) {
+                    g_methodChannel->InvokeMethod("usbPrinterConnected", nullptr);
+                }
+                // 处理USB设备插入事件
+            } else if (wParam == DBT_DEVICEREMOVECOMPLETE) {
+                std::cout << "USB device removed" << std::endl;
+                // 处理USB设备拔出事件
+                if (g_methodChannel) {
+                    g_methodChannel->InvokeMethod("usbPrinterDisconnected", nullptr);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
   // static
   void M2posPlugin::RegisterWithRegistrar(
       flutter::PluginRegistrarWindows *registrar)
   {
-    auto channel =
+    g_methodChannel =
         std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
             registrar->messenger(), "m2pos",
             &flutter::StandardMethodCodec::GetInstance());
 
     auto plugin = std::make_unique<M2posPlugin>();
 
-    channel->SetMethodCallHandler(
+    g_methodChannel->SetMethodCallHandler(
         [plugin_pointer = plugin.get()](const auto &call, auto result)
         {
           plugin_pointer->HandleMethodCall(call, std::move(result));
         });
 
     registrar->AddPlugin(std::move(plugin));
+
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = USBDeviceNotificationCallback;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"USBNotificationWindowClass";
+    RegisterClass(&wc);
+
+    HWND hwnd = CreateWindow(wc.lpszClassName, NULL, 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
+
+    // 注册USB设备通知
+    DEV_BROADCAST_DEVICEINTERFACE NotificationFilter;
+    ZeroMemory(&NotificationFilter, sizeof(NotificationFilter));
+    NotificationFilter.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
+    NotificationFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+    NotificationFilter.dbcc_classguid = {0x28d78fad, 0x5a12, 0x11D1, 0xae, 0x5b, 0x00, 0x00, 0xf8, 0x03, 0xa8, 0xc2};
+    RegisterDeviceNotification(hwnd, &NotificationFilter, DEVICE_NOTIFY_WINDOW_HANDLE);
   }
 
   M2posPlugin::M2posPlugin() {}
@@ -135,12 +174,12 @@ namespace m2pos
       if (didFound)
       {
         HANDLE hUsb = CreateFile((LPCWSTR)DeviceName,
-                                    GENERIC_READ | GENERIC_WRITE,
-                                    FILE_SHARE_WRITE | FILE_SHARE_READ,
-                                    NULL,
-                                    OPEN_EXISTING,
-                                    FILE_FLAG_OVERLAPPED,
-                                    NULL);
+                                 GENERIC_READ | GENERIC_WRITE,
+                                 FILE_SHARE_WRITE | FILE_SHARE_READ,
+                                 NULL,
+                                 OPEN_EXISTING,
+                                 FILE_FLAG_OVERLAPPED,
+                                 NULL);
 
         if (hUsb == INVALID_HANDLE_VALUE)
         {
@@ -154,28 +193,43 @@ namespace m2pos
         OVERLAPPED overlap;
         memset(&overlap, 0, sizeof(overlap));
         DWORD numread;
-        const uint8_t* ptr = uintList.data();
+        const uint8_t *ptr = uintList.data();
         LPCVOID lpcData = reinterpret_cast<LPCVOID>(ptr);
-        std::cout << "WriteFile  success  " <<static_cast<DWORD>(uintList.size()) << std::endl;
-        int success = WriteFile(hUsb, lpcData, static_cast<DWORD>(uintList.size()), (PULONG)&nBytes,&overlap);
+        std::cout << "WriteFile  success  " << static_cast<DWORD>(uintList.size()) << std::endl;
+        int success = WriteFile(hUsb, lpcData, static_cast<DWORD>(uintList.size()), (PULONG)&nBytes, &overlap);
         if (success)
         {
           std::cout << "WriteFile  success" << std::endl;
           std::cout << "WriteFile len:" << nBytes << std::endl;
-          
-        }else{
-      
-          std::cout << "WriteFile  fail" <<GetLastError() << std::endl;
+        }
+        else
+        {
+
+          std::cout << "WriteFile  fail" << GetLastError() << std::endl;
           if (GetLastError() == ERROR_IO_PENDING)
           {
             WaitForSingleObject(hUsb, 500);
             success = GetOverlappedResult(hUsb, &overlap, &numread, FALSE);
-          }else{
-            
+          }
+          else
+          {
           }
         }
-        CloseHandle(hUsb); 
+        CloseHandle(hUsb);
       }
+    }
+    if (method_call.method_name().compare("readUsbPrinterList") == 0)
+    {
+      const auto res = ReadUsbPrinterList();
+      flutter::EncodableList rawData;
+      for(const auto &map :res){
+        flutter::EncodableMap encodableMap;
+        for(const auto &pair : map){
+          encodableMap[flutter::EncodableValue(pair.first)] = flutter::EncodableValue(pair.second);
+        }
+        rawData.push_back(flutter::EncodableValue(encodableMap));
+      }
+      result->Success(flutter::EncodableValue(rawData));
     }
     if (method_call.method_name().compare("getPlatformVersion") == 0)
     {
@@ -193,29 +247,24 @@ namespace m2pos
       {
         version_stream << "7";
       }
-      version_stream << ReadUsbList();
       result->Success(flutter::EncodableValue(version_stream.str()));
     }
-    else
-    {
-      result->NotImplemented();
-    }
   }
-  std::string M2posPlugin::ReadUsbList()
+  std::vector<std::map<std::string, std::string>> M2posPlugin::ReadUsbPrinterList()
   {
 
+    std::vector<std::map<std::string, std::string>> dataList;
     // 获取设备信息集合
     HDEVINFO deviceInfoSet = SetupDiGetClassDevs(&usbDeviceInterfaceGUID, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (deviceInfoSet == INVALID_HANDLE_VALUE)
     {
       std::cerr << "Error: SetupDiGetClassDevs failed." << std::endl;
-      return "Error: SetupDiGetClassDevs failed";
+      return dataList;
     }
 
     // 枚举设备信息
     SP_DEVINFO_DATA deviceInfoData;
     deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-    std::vector<std::map<std::string, std::string>> dataList;
     for (DWORD i = 0; SetupDiEnumDeviceInfo(deviceInfoSet, i, &deviceInfoData); ++i)
     {
 
@@ -281,7 +330,7 @@ namespace m2pos
     // 释放设备信息集合
     SetupDiDestroyDeviceInfoList(deviceInfoSet);
 
-    return "void M2Plugin::HandleMethodCall123";
+    return dataList;
   }
 
 } // namespace m2pos

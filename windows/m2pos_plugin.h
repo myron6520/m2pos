@@ -3,6 +3,8 @@
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
+#include <map>
+#include <vector>
 
 #include <memory>
 
@@ -24,7 +26,7 @@ class M2posPlugin : public flutter::Plugin {
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue> &method_call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    std::string ReadUsbList();
+    std::vector<std::map<std::string, std::string>> ReadUsbPrinterList();
 };
 
 }  // namespace m2pos
